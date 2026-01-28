@@ -4,39 +4,25 @@
     <meta charset="UTF-8">
     <title>ד"ר שלמה ברונק - ניהול משימות</title>
     <style>
-        body { margin: 0; height: 100vh; background: #eef2f3; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; }
-        
+        body { margin: 0; height: 100vh; background: #f0f2f5; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
         #header { 
             position: fixed; top: 20px; left: 50%; transform: translateX(-50%); 
-            background: white; padding: 20px; border-radius: 20px; 
-            box-shadow: 0 10px 25px rgba(0,0,0,0.1); 
-            display: flex; flex-direction: column; align-items: center; gap: 15px; z-index: 1000; 
-            border: 2px solid #3498db;
+            background: white; padding: 20px; border-radius: 15px; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1); 
+            display: flex; flex-direction: column; align-items: center; gap: 10px; z-index: 1000; 
         }
-        
-        /* הסרנו את הגדרות ה-profile-img שהכילו את העיגול הכחול */
-        
-        h1 { margin: 0; color: #2c3e50; font-size: 1.6rem; }
-
+        /* העיגול הכחול והתמונה הוסרו מכאן */
+        h1 { margin: 0; color: #2c3e50; font-size: 1.4rem; }
         .sticky-note { 
-            position: absolute; width: 220px; padding: 20px; 
-            background: #fff9c4; border-radius: 12px; 
-            box-shadow: 5px 5px 15px rgba(0,0,0,0.15); cursor: grab; 
-            user-select: none; border-top: 15px solid #f1c40f;
+            position: absolute; width: 220px; padding: 15px; 
+            background: #fff9c4; border-radius: 10px; 
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1); cursor: grab; user-select: none;
         }
-
-        .timer { font-weight: bold; color: #e74c3c; direction: ltr; text-align: left; font-size: 1.1em; margin-top: 10px; }
-
-        @keyframes ultra-blink { 
-            0%, 100% { background-color: #ff0000; color: white; transform: scale(1); } 
-            50% { background-color: #c0392b; color: white; transform: scale(1.05); } 
-        }
-
-        .expired { animation: ultra-blink 0.6s infinite; z-index: 1000; border: none; }
-        .delete-btn { display: inline-block; margin-top: 15px; color: #c0392b; cursor: pointer; font-weight: bold; font-size: 0.9em; }
-        
+        .timer { font-weight: bold; color: #d9534f; direction: ltr; text-align: left; font-size: 1.1em; }
+        .expired { background-color: #ff4d4d !important; color: white; animation: pulse 1s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.8; } 100% { opacity: 1; } }
+        .delete-btn { display: block; margin-top: 10px; color: #888; cursor: pointer; font-size: 0.8em; font-weight: bold; }
         button { background: #3498db; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; }
-        button:hover { background: #2980b9; }
     </style>
 </head>
 <body>
@@ -44,9 +30,9 @@
 <div id="header">
     <h1>לוח המשימות של ד"ר ברונק</h1>
     <div style="display:flex; gap:10px;">
-        <input type="text" id="taskInput" placeholder="מה המשימה החדשה?">
+        <input type="text" id="taskInput" placeholder="מה המשימה?">
         <input type="datetime-local" id="dateInput">
-        <button id="addBtn">הוסף לענן</button>
+        <button id="addBtn">שמור בענן</button>
     </div>
 </div>
 
@@ -67,41 +53,64 @@
     const db = getFirestore(app);
     const tasksCol = collection(db, 'tasks');
 
+    // הוספת משימה חדשה
     document.getElementById('addBtn').onclick = async () => {
         const text = document.getElementById('taskInput').value;
         const date = document.getElementById('dateInput').value;
-        if (!text || !date) return alert("נא להזין טקסט ותאריך");
+        if (!text || !date) return alert("מלא את כל השדות");
 
         await addDoc(tasksCol, {
             text,
             deadline: new Date(date).getTime(),
             top: 250,
-            left: 100,
-            notified: false
+            left: 100
         });
         document.getElementById('taskInput').value = "";
     };
 
+    // האזנה לשינויים
     onSnapshot(tasksCol, (snapshot) => {
         document.querySelectorAll('.sticky-note').forEach(n => n.remove());
-        snapshot.forEach(docSnap => createNoteUI(docSnap.id, docSnap.data()));
+        snapshot.forEach(docSnap => createNoteUI(docSnap.id, docSnap.data(), db));
     });
 
-    function createNoteUI(id, data) {
+    function createNoteUI(id, data, db) {
         const note = document.createElement('div');
         note.className = 'sticky-note';
         note.style.top = data.top + 'px';
         note.style.left = data.left + 'px';
         note.innerHTML = `
             <div style="font-weight:bold">${data.text}</div>
-            <div class="timer" id="t-${id}">טוען...</div>
-            <span class="delete-btn" onclick="window.removeTask('${id}')">🗑️ מחק</span>
+            <div class="timer" id="t-${id}">מחשב זמן...</div>
+            <span class="delete-btn" onclick="window.removeTask('${id}')">✖ מחק</span>
         `;
-        setupDraggable(note, id);
+
+        const interval = setInterval(() => {
+            const el = document.getElementById(`t-${id}`);
+            if (!el) { clearInterval(interval); return; }
+
+            const dist = data.deadline - Date.now();
+            if (isNaN(dist)) { 
+                el.innerText = "תאריך לא תקין"; 
+                return; 
+            }
+
+            if (dist < 0) {
+                el.innerText = "הזמן עבר!";
+                note.classList.add('expired');
+            } else {
+                const h = Math.floor(dist / 3600000);
+                const m = Math.floor((dist % 3600000) / 60000);
+                const s = Math.floor((dist % 60000) / 1000);
+                el.innerText = `${h}h ${m}m ${s}s`;
+            }
+        }, 1000);
+
+        setupDraggable(note, id, db);
         document.body.appendChild(note);
     }
 
-    function setupDraggable(note, id) {
+    function setupDraggable(note, id, db) {
         let isDragging = false;
         note.onmousedown = (e) => {
             if (e.target.classList.contains('delete-btn')) return;
