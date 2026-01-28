@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>ד"ר שלמה ברונק - ניהול משימות</title>
+    <style>
+        body { margin: 0; height: 100vh; background: #eef2f3; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; }
+        
+        #header { 
+            position: fixed; top: 20px; left: 50%; transform: translateX(-50%); 
+            background: white; padding: 20px; border-radius: 20px; 
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1); 
+            display: flex; flex-direction: column; align-items: center; gap: 15px; z-index: 1000; 
+            border: 2px solid #3498db;
+        }
+        
+        /* הסרנו את הגדרות ה-profile-img שהכילו את העיגול הכחול */
+        
+        h1 { margin: 0; color: #2c3e50; font-size: 1.6rem; }
+
+        .sticky-note { 
+            position: absolute; width: 220px; padding: 20px; 
+            background: #fff9c4; border-radius: 12px; 
+            box-shadow: 5px 5px 15px rgba(0,0,0,0.15); cursor: grab; 
+            user-select: none; border-top: 15px solid #f1c40f;
+        }
+
+        .timer { font-weight: bold; color: #e74c3c; direction: ltr; text-align: left; font-size: 1.1em; margin-top: 10px; }
+
+        @keyframes ultra-blink { 
+            0%, 100% { background-color: #ff0000; color: white; transform: scale(1); } 
+            50% { background-color: #c0392b; color: white; transform: scale(1.05); } 
+        }
+
+        .expired { animation: ultra-blink 0.6s infinite; z-index: 1000; border: none; }
+        .delete-btn { display: inline-block; margin-top: 15px; color: #c0392b; cursor: pointer; font-weight: bold; font-size: 0.9em; }
+        
+        button { background: #3498db; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; }
+        button:hover { background: #2980b9; }
+    </style>
+</head>
+<body>
+
+<div id="header">
+    <h1>לוח המשימות של ד"ר ברונק</h1>
+    <div style="display:flex; gap:10px;">
+        <input type="text" id="taskInput" placeholder="מה המשימה החדשה?">
+        <input type="datetime-local" id="dateInput">
+        <button id="addBtn">הוסף לענן</button>
+    </div>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getFirestore, collection, addDoc, onSnapshot, deleteDoc, doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyDHXSlIdXaLbpjkF5vNLPirmjDJfIgJf6M",
+        authDomain: "todo-2ae6b.firebaseapp.com",
+        projectId: "todo-2ae6b",
+        storageBucket: "todo-2ae6b.firebasestorage.app",
+        messagingSenderId: "576825825783",
+        appId: "1:576825825783:web:a98f9df03f910daa4cb6f2"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const tasksCol = collection(db, 'tasks');
+
+    document.getElementById('addBtn').onclick = async () => {
+        const text = document.getElementById('taskInput').value;
+        const date = document.getElementById('dateInput').value;
+        if (!text || !date) return alert("נא להזין טקסט ותאריך");
+
+        await addDoc(tasksCol, {
+            text,
+            deadline: new Date(date).getTime(),
+            top: 250,
+            left: 100,
+            notified: false
+        });
+        document.getElementById('taskInput').value = "";
+    };
+
+    onSnapshot(tasksCol, (snapshot) => {
+        document.querySelectorAll('.sticky-note').forEach(n => n.remove());
+        snapshot.forEach(docSnap => createNoteUI(docSnap.id, docSnap.data()));
+    });
+
+    function createNoteUI(id, data) {
+        const note = document.createElement('div');
+        note.className = 'sticky-note';
+        note.style.top = data.top + 'px';
+        note.style.left = data.left + 'px';
+        note.innerHTML = `
+            <div style="font-weight:bold">${data.text}</div>
+            <div class="timer" id="t-${id}">טוען...</div>
+            <span class="delete-btn" onclick="window.removeTask('${id}')">🗑️ מחק</span>
+        `;
+        setupDraggable(note, id);
+        document.body.appendChild(note);
+    }
+
+    function setupDraggable(note, id) {
+        let isDragging = false;
+        note.onmousedown = (e) => {
+            if (e.target.classList.contains('delete-btn')) return;
+            isDragging = true;
+            let shiftX = e.clientX - note.getBoundingClientRect().left;
+            let shiftY = e.clientY - note.getBoundingClientRect().top;
+            document.onmousemove = (e) => {
+                if (!isDragging) return;
+                note.style.left = (e.clientX - shiftX) + 'px';
+                note.style.top = (e.clientY - shiftY) + 'px';
+            };
+            document.onmouseup = async () => {
+                if (isDragging) {
+                    isDragging = false;
+                    document.onmousemove = null;
+                    await updateDoc(doc(db, 'tasks', id), {
+                        top: parseInt(note.style.top),
+                        left: parseInt(note.style.left)
+                    });
+                }
+            };
+        };
+    }
+
+    window.removeTask = async (id) => {
+        await deleteDoc(doc(db, 'tasks', id));
+    };
+</script>
+</body>
+</html>
